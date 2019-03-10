@@ -1,6 +1,11 @@
 import { forEachValue } from '../util'
 
 // Base data struct for store's module, package with some attribute and method
+
+// 一个Module实例包含了
+// context(包含了作用与当前模块的dispatch,commit,state,getters方法组成的对象)
+//_children（当前模块子模块实例组成的数组）
+// _rawModule当前模块的最初的定义（书写时候的定义）
 export default class Module {
   constructor (rawModule, runtime) {
     this.runtime = runtime

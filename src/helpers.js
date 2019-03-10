@@ -6,15 +6,18 @@
  */
 export const mapState = normalizeNamespace((namespace, states) => {
   const res = {}
+    //将states转为key/value组成的数组，如果为数组则key/value相同
   normalizeMap(states).forEach(({ key, val }) => {
     res[key] = function mappedState () {
       let state = this.$store.state
       let getters = this.$store.getters
       if (namespace) {
+          //通过namespace从store._modulesNamespaceMap中找到这个namespace对应的模块
         const module = getModuleByNamespace(this.$store, 'mapState', namespace)
         if (!module) {
           return
         }
+        //将从当前模块的context中拿到作用域当前模块的state和getters并赋值给state,getters
         state = module.context.state
         getters = module.context.getters
       }
@@ -95,6 +98,7 @@ export const mapActions = normalizeNamespace((namespace, actions) => {
       // get dispatch function from store
       let dispatch = this.$store.dispatch
       if (namespace) {
+
         const module = getModuleByNamespace(this.$store, 'mapActions', namespace)
         if (!module) {
           return
@@ -140,8 +144,11 @@ function normalizeMap (map) {
  * @return {Function}
  */
 function normalizeNamespace (fn) {
+  //namespace为mapState的第一个参数（对象（访问子模块）/数组（根模块）/字符串（命名空间））
+    // map为一个对象，当mapState使用命名空间时会传入第一个字符串参数和第二个map参数
   return (namespace, map) => {
     if (typeof namespace !== 'string') {
+      //如果第一个参数不是字符串，即没有使用命名空间的写法，则将map等于第一个参数（对象/字符串），并且让namespace置空
       map = namespace
       namespace = ''
     } else if (namespace.charAt(namespace.length - 1) !== '/') {
@@ -158,6 +165,7 @@ function normalizeNamespace (fn) {
  * @param {String} namespace
  * @return {Object}
  */
+//通过namespace在store._modulesNamespaceMap找到这个namespace对应的模块
 function getModuleByNamespace (store, helper, namespace) {
   const module = store._modulesNamespaceMap[namespace]
   if (process.env.NODE_ENV !== 'production' && !module) {

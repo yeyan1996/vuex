@@ -31,6 +31,7 @@ export class Store {
     this._actionSubscribers = []
     this._mutations = Object.create(null)
     this._wrappedGetters = Object.create(null)
+      //创建根modules，初始化父子modules关系（树）
     this._modules = new ModuleCollection(options)
     this._modulesNamespaceMap = Object.create(null)
     this._subscribers = []
@@ -54,10 +55,14 @@ export class Store {
     // init root module.
     // this also recursively registers all sub-modules
     // and collects all module getters inside this._wrappedGetters
+      //初始化当前模块和所有子模块，根据命名空间注册state,actions,mutations,getters，并且提供访问当前模块的便捷方法（local）
     installModule(this, state, [], this._modules.root)
 
     // initialize the store vm, which is responsible for the reactivity
     // (also registers _wrappedGetters as computed properties)
+     /**
+      * 新建一个vm实例保存state，在computed属性中保存getters，通过watch观察state，保证都使用commit修改state
+      * **/
     resetStoreVM(this, state)
 
     // apply plugins
@@ -69,6 +74,7 @@ export class Store {
     }
   }
 
+  //将store.state即rootState代理到之前声明的vm实例中的$$state中
   get state () {
     return this._vm._data.$$state
   }
@@ -121,6 +127,7 @@ export class Store {
     } = unifyObjectStyle(_type, _payload)
 
     const action = { type, payload }
+    //如果定义多个重名的action并且没有加命名空间，则entry长度>1
     const entry = this._actions[type]
     if (!entry) {
       if (process.env.NODE_ENV !== 'production') {
@@ -181,17 +188,21 @@ export class Store {
     })
   }
 
+  //动态注入vuex模块
   registerModule (path, rawModule, options = {}) {
+    //保证path是一个数组（符合vuex安装的规则）
     if (typeof path === 'string') path = [path]
 
     if (process.env.NODE_ENV !== 'production') {
       assert(Array.isArray(path), `module path must be a string or an Array.`)
       assert(path.length > 0, 'cannot register the root module by using registerModule.')
     }
-
+    //根据path注册这个模块
     this._modules.register(path, rawModule)
+      //初始化
     installModule(this, this.state, path, this._modules.get(path), options.preserveState)
     // reset store to update getters...
+      //重新重置所有的state（实例化一个vm存储state和getters）
     resetStoreVM(this, this.state)
   }
 
@@ -215,6 +226,7 @@ export class Store {
     resetStore(this, true)
   }
 
+  //通过commit的方式修改state
   _withCommit (fn) {
     const committing = this._committing
     this._committing = true
@@ -256,8 +268,10 @@ function resetStoreVM (store, state, hot) {
   const computed = {}
   forEachValue(wrappedGetters, (fn, key) => {
     // use computed to leverage its lazy-caching mechanism
+      //fn是getter函数
     computed[key] = () => fn(store)
     Object.defineProperty(store.getters, key, {
+      //将store.getters.a代理到store._vm.a
       get: () => store._vm[key],
       enumerable: true // for local getters
     })
@@ -270,6 +284,7 @@ function resetStoreVM (store, state, hot) {
   Vue.config.silent = true
   store._vm = new Vue({
     data: {
+      //state为store.state即rootState
       $$state: state
     },
     computed
@@ -277,6 +292,7 @@ function resetStoreVM (store, state, hot) {
   Vue.config.silent = silent
 
   // enable strict mode for new vm
+    //是否开启vuex的strict模式
   if (store.strict) {
     enableStrictMode(store)
   }
@@ -293,32 +309,41 @@ function resetStoreVM (store, state, hot) {
   }
 }
 
-function installModule (store, rootState, path, module, hot) {
+function installModule (store, rootState, /*第一次为空数组*/path, module, hot) {
   const isRoot = !path.length
+    //获取命名前缀，根模块为空字符串，设置了namespaced的模块会根据嵌套的层级拼接（a/b/c/）
   const namespace = store._modules.getNamespace(path)
 
   // register in namespace map
+    //生成_modulesNamespaceMap对象，存放namespaced为true的模块，属性名是所有的父级module名+ '/'，值和modules相同
+    //通过加上父级模块的路径，保证了每个模块都有自己的命名空间，防止名字相同的getter/actions/mutations命名冲突
   if (module.namespaced) {
     store._modulesNamespaceMap[namespace] = module
   }
 
   // set state
+    //设置嵌套模块的state
   if (!isRoot && !hot) {
     const parentState = getNestedState(rootState, path.slice(0, -1))
     const moduleName = path[path.length - 1]
     store._withCommit(() => {
+      //在父state中设置子state，属性名是当前模块名，值是state对象，并且是响应式的
       Vue.set(parentState, moduleName, module.state)
     })
   }
 
+    //使得相同模块中的actions dispatch时不需要加上命名空间，自动作用与当前模块
+    //local返回的是一个含有dispatch,commit,getters,state的对象（即action函数的第一个参数ctx）
   const local = module.context = makeLocalContext(store, namespace, path)
 
   module.forEachMutation((mutation, key) => {
+    //mutation是mutations中定义的函数，key为这个mutation函数的key
     const namespacedType = namespace + key
+      //在store中注册所有的mutations
     registerMutation(store, namespacedType, mutation, local)
   })
 
-  module.forEachAction((action, key) => {
+  module.forEachAction((action, pathkey) => {
     const type = action.root ? key : namespace + key
     const handler = action.handler || action
     registerAction(store, type, handler, local)
@@ -330,6 +355,7 @@ function installModule (store, rootState, path, module, hot) {
   })
 
   module.forEachChild((child, key) => {
+    //递归注册子模块
     installModule(store, rootState, path.concat(key), child, hot)
   })
 }
@@ -338,16 +364,19 @@ function installModule (store, rootState, path, module, hot) {
  * make localized dispatch, commit, getters and state
  * if there is no namespace, just use root ones
  */
+//使得声明了namespace的模块中的actions dispatch时不需要加上命名空间，自动作用与当前模块
 function makeLocalContext (store, namespace, path) {
   const noNamespace = namespace === ''
 
   const local = {
+    //没有显式的声明namespace则使用普通的dispatch
     dispatch: noNamespace ? store.dispatch : (_type, _payload, _options) => {
       const args = unifyObjectStyle(_type, _payload, _options)
       const { payload, options } = args
       let { type } = args
 
       if (!options || !options.root) {
+        //如果声明了namespace:true则会自动在type前加上命名空间（a/b/c/+type）
         type = namespace + type
         if (process.env.NODE_ENV !== 'production' && !store._actions[type]) {
           console.error(`[vuex] unknown local action type: ${args.type}, global type: ${type}`)
@@ -381,6 +410,7 @@ function makeLocalContext (store, namespace, path) {
     getters: {
       get: noNamespace
         ? () => store.getters
+          //在有命名空间的情况下，在modules中访问的getters实质上是访问store.getters
         : () => makeLocalGetters(store, namespace)
     },
     state: {
@@ -400,12 +430,14 @@ function makeLocalGetters (store, namespace) {
     if (type.slice(0, splitPos) !== namespace) return
 
     // extract local getter type
+      //获取type名（a/b/c = splitPos + type）
     const localType = type.slice(splitPos)
 
     // Add a port to the getters proxy.
     // Define as getter property because
     // we do not want to evaluate the getters in this time.
     Object.defineProperty(gettersProxy, localType, {
+      //访问localType实际上映射到store.getters中的type
       get: () => store.getters[type],
       enumerable: true
     })
@@ -416,7 +448,9 @@ function makeLocalGetters (store, namespace) {
 
 function registerMutation (store, type, handler, local) {
   const entry = store._mutations[type] || (store._mutations[type] = [])
+    //mutations对象中的mutation实际上是一个数组，当有重复名字的mutation存在时，依次执行
   entry.push(function wrappedMutationHandler (payload) {
+    //handler为mutation函数，并且让这个mutation能够不用命名前缀访问当前模块的state
     handler.call(store, local.state, payload)
   })
 }
@@ -429,6 +463,7 @@ function registerAction (store, type, handler, local) {
       commit: local.commit,
       getters: local.getters,
       state: local.state,
+        //rootGetters为store中的根getters
       rootGetters: store.getters,
       rootState: store.state
     }, payload, cb)
@@ -447,6 +482,7 @@ function registerAction (store, type, handler, local) {
 }
 
 function registerGetter (store, type, rawGetter, local) {
+  //getter不能有相同命名
   if (store._wrappedGetters[type]) {
     if (process.env.NODE_ENV !== 'production') {
       console.error(`[vuex] duplicate getter key: ${type}`)
@@ -463,9 +499,11 @@ function registerGetter (store, type, rawGetter, local) {
   }
 }
 
+//通过watch这个state，来保证在开发环境下，对state的修改都是用过commit，不能直接修改state的属性
 function enableStrictMode (store) {
   store._vm.$watch(function () { return this._data.$$state }, () => {
     if (process.env.NODE_ENV !== 'production') {
+      //当committing为false时会报错
       assert(store._committing, `do not mutate vuex store state outside mutation handlers.`)
     }
   }, { deep: true, sync: true })

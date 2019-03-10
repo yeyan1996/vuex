@@ -1,18 +1,21 @@
 import Module from './module'
 import { assert, forEachValue } from '../util'
 
+//ModuleCollection代表模块实例（Module）的集合
 export default class ModuleCollection {
   constructor (rawRootModule) {
     // register root module (Vuex.Store options)
     this.register([], rawRootModule, false)
   }
-
+    //递归的遍历，找到这个path对应的模块
   get (path) {
     return path.reduce((module, key) => {
       return module.getChild(key)
     }, this.root)
   }
 
+  //通俗的来说就是有namespaced就将当前模块的属性名拼接到namespace字符串中，然后这个模块下面所有的actions/mutations/getters都会加上namespace前缀
+  //state则是另一种嵌套的表示
   getNamespace (path) {
     let module = this.root
     return path.reduce((namespace, key) => {
@@ -34,7 +37,10 @@ export default class ModuleCollection {
     if (path.length === 0) {
       this.root = newModule
     } else {
+        //module集合的get方法传入path找到对应模块
+        //这里找到了当前实例的父亲模块
       const parent = this.get(path.slice(0, -1))
+        //给module实例父亲的_children属性添加这个模块
       parent.addChild(path[path.length - 1], newModule)
     }
 
@@ -42,7 +48,7 @@ export default class ModuleCollection {
     // register nested modules
     if (rawModule.modules) {
       forEachValue(rawModule.modules, (rawChildModule, key) => {
-        //key为
+        //key为modules对象的属性，即子模块的属性名
         this.register(path.concat(key), rawChildModule, runtime)
       })
     }
