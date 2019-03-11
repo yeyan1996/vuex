@@ -70,6 +70,7 @@ export class Store {
 
     const useDevtools = options.devtools !== undefined ? options.devtools : Vue.config.devtools
     if (useDevtools) {
+      //vuex自动添加vue-devtools插件
       devtoolPlugin(this)
     }
   }
@@ -106,6 +107,7 @@ export class Store {
         handler(payload)
       })
     })
+    //调用订阅者的回调函数
     this._subscribers.forEach(sub => sub(mutation, this.state))
 
     if (
@@ -166,6 +168,7 @@ export class Store {
     })
   }
 
+  //添加一个订阅者,返回一个取消订阅的函数
   subscribe (fn) {
     return genericSubscribe(fn, this._subscribers)
   }
@@ -235,6 +238,7 @@ export class Store {
   }
 }
 
+//添加一个订阅者返回一个取消订阅的函数
 function genericSubscribe (fn, subs) {
   if (subs.indexOf(fn) < 0) {
     subs.push(fn)
@@ -268,7 +272,7 @@ function resetStoreVM (store, state, hot) {
   const computed = {}
   forEachValue(wrappedGetters, (fn, key) => {
     // use computed to leverage its lazy-caching mechanism
-      //fn是getter函数
+      //fn是wrappedGetters的属性值，wrappedGetter函数（497）
     computed[key] = () => fn(store)
     Object.defineProperty(store.getters, key, {
       //将store.getters.a代理到store._vm.a
@@ -489,6 +493,7 @@ function registerGetter (store, type, rawGetter, local) {
     }
     return
   }
+  //wrappedGetter函数是一个闭包,引用了local对象
   store._wrappedGetters[type] = function wrappedGetter (store) {
     return rawGetter(
       local.state, // local state

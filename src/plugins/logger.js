@@ -10,8 +10,9 @@ export default function createLogger ({
   logger = console
 } = {}) {
   return store => {
+    //将preState初始值设为store初始化的值
     let prevState = deepCopy(store.state)
-
+  //让store订阅这个插件,一旦发生commit则执行回调
     store.subscribe((mutation, state) => {
       if (typeof logger === 'undefined') {
         return
@@ -44,7 +45,7 @@ export default function createLogger ({
           logger.log('—— log end ——')
         }
       }
-
+    //每次改变state后记录prevState为改变后的state,以供下次调用
       prevState = nextState
     })
   }
