@@ -104,10 +104,11 @@ export class Store {
     }
     this._withCommit(() => {
       entry.forEach(function commitIterator (handler) {
+        //hanlder同样也是一个wrappedMutation，包裹了一层函数，在内部会加入当前的local对象，再合并payload
         handler(payload)
       })
     })
-    //调用订阅者的回调函数
+    //调用订阅者的回调函数（默认会在devtools会记录这个mutation名字和当前的state状态）
     this._subscribers.forEach(sub => sub(mutation, this.state))
 
     if (
@@ -129,7 +130,8 @@ export class Store {
     } = unifyObjectStyle(_type, _payload)
 
     const action = { type, payload }
-    //如果定义多个重名的action并且没有加命名空间，则entry长度>1
+    /**entry是一个wrappedAction，执行函数会在开发者定义的action上包裹一层函数，通过call传入ctx对象和payload**/
+      // 如果定义多个重名的action并且没有加命名空间，则entry长度>1
     const entry = this._actions[type]
     if (!entry) {
       if (process.env.NODE_ENV !== 'production') {
