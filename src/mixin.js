@@ -22,6 +22,7 @@ export default function (Vue) {
   function vuexInit () {
     const options = this.$options
     // store injection
+    // 让所有组件都拥有 $store 属性，指向根实例的 store 对象
     if (options.store) {
       this.$store = typeof options.store === 'function'
         ? options.store()

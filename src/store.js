@@ -62,7 +62,7 @@ export class Store {
     // (also registers _wrappedGetters as computed properties)
      /**
       * 新建一个vm实例保存state，在computed属性中保存getters，通过watch观察state，保证都使用commit修改state
-      * **/
+      **/
     resetStoreVM(this, state)
 
     // apply plugins
@@ -130,8 +130,9 @@ export class Store {
     } = unifyObjectStyle(_type, _payload)
 
     const action = { type, payload }
-    /**entry是一个wrappedAction，执行函数会在开发者定义的action上包裹一层函数，通过call传入ctx对象和payload**/
-      // 如果定义多个重名的action并且没有加命名空间，则entry长度>1
+    /** entry是一个 wrappedAction，执行函数会在开发者定义的 action 上包裹一层函数，通过 call 传入 ctx 对象和 payload**/
+    // 同时保证 wrappedAction 会保证 action 是一个 promise
+      // 如果定义多个重名的 action 并且没有加命名空间，则 entry 长度 > 1
     const entry = this._actions[type]
     if (!entry) {
       if (process.env.NODE_ENV !== 'production') {
@@ -140,6 +141,7 @@ export class Store {
       return
     }
 
+    // 执行 action 的订阅者（前置钩子）
     try {
       this._actionSubscribers
         .filter(sub => sub.before)
@@ -157,6 +159,7 @@ export class Store {
 
     return result.then(res => {
       try {
+          // 执行 action 的订阅者（后置钩子）
         this._actionSubscribers
           .filter(sub => sub.after)
           .forEach(sub => sub.after(action, this.state))
@@ -202,7 +205,7 @@ export class Store {
       assert(Array.isArray(path), `module path must be a string or an Array.`)
       assert(path.length > 0, 'cannot register the root module by using registerModule.')
     }
-    //根据path注册这个模块
+    // 调用 moduleCollection 实例的 register 方法，根据 path 动态注册模块
     this._modules.register(path, rawModule)
       //初始化
     installModule(this, this.state, path, this._modules.get(path), options.preserveState)
@@ -274,10 +277,12 @@ function resetStoreVM (store, state, hot) {
   const computed = {}
   forEachValue(wrappedGetters, (fn, key) => {
     // use computed to leverage its lazy-caching mechanism
-      //fn是wrappedGetters的属性值，wrappedGetter函数（497）
+      // fn 是 wrappedGetters 对象的属性值，即 wrappedGetter 函数（497）
+      /**将 wrappedGetters 对象上所有的 getter 函数，作为内部 vm 实例的 computed 属性**/
     computed[key] = () => fn(store)
     Object.defineProperty(store.getters, key, {
-      //将store.getters.a代理到store._vm.a
+     // 当在模块的 action 中通过 ctx.getter.< getter 名> 访问 store.getters 中的 getter 时
+        // 最终会指向 vm 实例对应的 computed 属性，同时触发计算
       get: () => store._vm[key],
       enumerable: true // for local getters
     })
@@ -315,53 +320,60 @@ function resetStoreVM (store, state, hot) {
   }
 }
 
-function installModule (store, rootState, /*第一次为空数组*/path, module, hot) {
-  const isRoot = !path.length
-    //获取命名前缀，根模块为空字符串，设置了namespaced的模块会根据嵌套的层级拼接（a/b/c/）
+// module 为 module 实例，第一次传入根模块的 module 实例
+// path 初始化时，传入一个空数组，之后若有命名空间会转为命名空间组成的数组
+function installModule (store, rootState,path, module, hot) {
+  const isRoot = !path.length // 判断是否是根模块
+
+    // 根据 path 数组获取命名前缀，根模块为空字符串
+    // 设置了 namespaced 的模块会根据嵌套的层级拼接（a/b/c/）
   const namespace = store._modules.getNamespace(path)
 
-  // register in namespace map
-    //生成_modulesNamespaceMap对象，存放namespaced为true的模块，属性名是所有的父级module名+ '/'，值和modules相同
-    //通过加上父级模块的路径，保证了每个模块都有自己的命名空间，防止名字相同的getter/actions/mutations命名冲突
+    // register in namespace map
+    // 生成 _modulesNamespaceMap 对象，存放 namespaced 为 true 的模块
+    // 属性名是所有的父级 module 名 +  '/'，值为当前注册的 module 实例
+    // 通过加上父级模块的路径，保证了每个模块都有自己的命名空间，防止名字相同的 getter/actions/mutations 命名冲突
   if (module.namespaced) {
     store._modulesNamespaceMap[namespace] = module
   }
 
   // set state
-    //设置嵌套模块的state
+    /**添加当前模块，作为父模块的 state 对象中的属性，在 state 中建立父子关系**/
   if (!isRoot && !hot) {
     const parentState = getNestedState(rootState, path.slice(0, -1))
     const moduleName = path[path.length - 1]
     store._withCommit(() => {
-      //在父state中设置子state，属性名是当前模块名，值是state对象，并且是响应式的
+      // 在父模块的 state 属性中添加当前模块，属性名是当前模块名，值是state对象
       Vue.set(parentState, moduleName, module.state)
     })
   }
 
-    //使得相同模块中的actions dispatch时不需要加上命名空间，自动作用与当前模块
-    //local返回的是一个含有dispatch,commit,getters,state的对象（即action函数的第一个参数ctx）
+    /**给当前模块添加 context 属性，即 action 的第一个参数 ctx **/
+    // ctx 中的 dispatch 会添加当前模块的命名空间再执行全局的 dispatch 去 _actions 中找到对应的 action
+    // local 返回的是一个含有 dispatch,commit,getters,state 的对象，即 ctx
   const local = module.context = makeLocalContext(store, namespace, path)
 
   module.forEachMutation((mutation, key) => {
     //mutation是mutations中定义的函数，key为这个mutation函数的key
     const namespacedType = namespace + key
-      //在store中注册所有的mutations
+      // 在 store 的 _mutations 中注册所有的mutations
     registerMutation(store, namespacedType, mutation, local)
   })
 
-  module.forEachAction((action, pathkey) => {
+  module.forEachAction((action, key) => {
     const type = action.root ? key : namespace + key
     const handler = action.handler || action
     registerAction(store, type, handler, local)
   })
 
   module.forEachGetter((getter, key) => {
-    const namespacedType = namespace + key
+    const namespacedType = namespace + key // 完整的 getter 名
     registerGetter(store, namespacedType, getter, local)
   })
 
   module.forEachChild((child, key) => {
-    //递归注册子模块
+    //递归注册子模块，建立 module 树，并且给 path 数组推入当前命名空间（字符串）
+      // 此时所有的子模块中的 state，actions，mutations，getters 都被注册完毕
     installModule(store, rootState, path.concat(key), child, hot)
   })
 }
@@ -370,19 +382,21 @@ function installModule (store, rootState, /*第一次为空数组*/path, module,
  * make localized dispatch, commit, getters and state
  * if there is no namespace, just use root ones
  */
-//使得声明了namespace的模块中的actions dispatch时不需要加上命名空间，自动作用与当前模块
+// 使得声明了 namespace 的模块中的 actions dispatch 时不需要加上命名空间，自动作用与当前模块
+// 传入 namespace (a/b/c/)
 function makeLocalContext (store, namespace, path) {
   const noNamespace = namespace === ''
 
+    // local 为 action 中第一个 ctx 参数
   const local = {
-    //没有显式的声明namespace则使用普通的dispatch
+    // 没有显式的声明 namespace 则使用普通的 dispatch
     dispatch: noNamespace ? store.dispatch : (_type, _payload, _options) => {
       const args = unifyObjectStyle(_type, _payload, _options)
       const { payload, options } = args
       let { type } = args
 
       if (!options || !options.root) {
-        //如果声明了namespace:true则会自动在type前加上命名空间（a/b/c/+type）
+        // 如果定义了 namespace:true 则会自动在 type 前加上模块的命名空间（a/b/c/ + type）
         type = namespace + type
         if (process.env.NODE_ENV !== 'production' && !store._actions[type]) {
           console.error(`[vuex] unknown local action type: ${args.type}, global type: ${type}`)
@@ -412,11 +426,12 @@ function makeLocalContext (store, namespace, path) {
 
   // getters and state object must be gotten lazily
   // because they will be changed by vm update
+    // 定义 local.getters 和 local.state
   Object.defineProperties(local, {
     getters: {
       get: noNamespace
         ? () => store.getters
-          //在有命名空间的情况下，在modules中访问的getters实质上是访问store.getters
+          // 在有命名空间的情况下，在 modules 中访问的 getters 实质上是访问 store.getters
         : () => makeLocalGetters(store, namespace)
     },
     state: {
@@ -431,19 +446,22 @@ function makeLocalGetters (store, namespace) {
   const gettersProxy = {}
 
   const splitPos = namespace.length
+    // store.getters 保存了所有 getters，并且同名的 getters 会添加命名空间
   Object.keys(store.getters).forEach(type => {
     // skip if the target getter is not match this namespace
     if (type.slice(0, splitPos) !== namespace) return
 
     // extract local getter type
-      //获取type名（a/b/c = splitPos + type）
+      // 根据 type 获取 localType 名
+      // type(a/b/c/getter1) = splitPos(a/b/c/) + localType(getter1)
     const localType = type.slice(splitPos)
 
     // Add a port to the getters proxy.
     // Define as getter property because
     // we do not want to evaluate the getters in this time.
     Object.defineProperty(gettersProxy, localType, {
-      //访问localType实际上映射到store.getters中的type
+      // 访问localType实际上映射到 store.getters 中的type
+        // 即访问 local.getter 最终会拼上命名空间从 store.getters 找
       get: () => store.getters[type],
       enumerable: true
     })
@@ -456,20 +474,22 @@ function registerMutation (store, type, handler, local) {
   const entry = store._mutations[type] || (store._mutations[type] = [])
     //mutations对象中的mutation实际上是一个数组，当有重复名字的mutation存在时，依次执行
   entry.push(function wrappedMutationHandler (payload) {
-    //handler为mutation函数，并且让这个mutation能够不用命名前缀访问当前模块的state
+    // handler 为 mutation 函数，并且让这个 mutation 能够不用命名前缀访问当前模块的state
     handler.call(store, local.state, payload)
   })
 }
 
 function registerAction (store, type, handler, local) {
   const entry = store._actions[type] || (store._actions[type] = [])
+    // action 会被 wrappedActionHandler 包裹一层，每当 dispatch 执行一个 action 时
+    // 都会通过 wrappedActionHandler 将 action 包裹为一个 promise，并且传入 ctx 中的 dispatch 等方法
   entry.push(function wrappedActionHandler (payload, cb) {
     let res = handler.call(store, {
       dispatch: local.dispatch,
       commit: local.commit,
       getters: local.getters,
       state: local.state,
-        //rootGetters为store中的根getters
+      // rootGetters 为 store 中的根getters
       rootGetters: store.getters,
       rootState: store.state
     }, payload, cb)
@@ -495,9 +515,11 @@ function registerGetter (store, type, rawGetter, local) {
     }
     return
   }
-  //wrappedGetter函数是一个闭包,引用了local对象
+    /** _wrappedGetters 和 store.getters 的区别在于，前者的值是一个函数，后者的值是函数计算后的结果**/
+    // 当执行里面的 getter 函数时，会传入 local 对象来计算出最终值
   store._wrappedGetters[type] = function wrappedGetter (store) {
     return rawGetter(
+        // 传入 getter 的 4 个参数
       local.state, // local state
       local.getters, // local getters
       store.state, // root state
