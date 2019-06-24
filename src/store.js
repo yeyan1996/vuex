@@ -75,7 +75,7 @@ export class Store {
     }
   }
 
-  //将store.state即rootState代理到之前声明的vm实例中的$$state中
+  // 将 store.state 即 rootState 代理到之前声明的 vm 实例中的 $$state 中
   get state () {
     return this._vm._data.$$state
   }
@@ -272,6 +272,7 @@ function resetStoreVM (store, state, hot) {
   const oldVm = store._vm
 
   // bind store public getters
+  // 定义 store 的 getters 属性
   store.getters = {}
   const wrappedGetters = store._wrappedGetters
   const computed = {}
@@ -280,9 +281,10 @@ function resetStoreVM (store, state, hot) {
       // fn 是 wrappedGetters 对象的属性值，即 wrappedGetter 函数（497）
       /**将 wrappedGetters 对象上所有的 getter 函数，作为内部 vm 实例的 computed 属性**/
     computed[key] = () => fn(store)
+    // 定义 store.getters 属性，使得能直接通过 store.getters.< getter 名> 访问对应的 getter
+    // key 为含有命名空间的完整路径
     Object.defineProperty(store.getters, key, {
-     // 当在模块的 action 中通过 ctx.getter.< getter 名> 访问 store.getters 中的 getter 时
-        // 最终会指向 vm 实例对应的 computed 属性，同时触发计算
+        // 访问 store.getters 最终会指向 vm 实例对应的 computed 属性，同时触发计算返回结果值
       get: () => store._vm[key],
       enumerable: true // for local getters
     })
@@ -303,7 +305,7 @@ function resetStoreVM (store, state, hot) {
   Vue.config.silent = silent
 
   // enable strict mode for new vm
-    //是否开启vuex的strict模式
+    // 是否开启 vuex 的 strict 模式，禁止 commit 以外的方法修改 state
   if (store.strict) {
     enableStrictMode(store)
   }
@@ -431,7 +433,8 @@ function makeLocalContext (store, namespace, path) {
     getters: {
       get: noNamespace
         ? () => store.getters
-          // 在有命名空间的情况下，在 modules 中访问的 getters 实质上是访问 store.getters
+          // 生成上下文的 getters 对象
+          // 允许在 module 中通过 ctx.getters ，使得访问当前 module 的 getter 不需要添加命名空间
         : () => makeLocalGetters(store, namespace)
     },
     state: {
@@ -442,6 +445,7 @@ function makeLocalContext (store, namespace, path) {
   return local
 }
 
+// 定义 ctx.getter 对象
 function makeLocalGetters (store, namespace) {
   const gettersProxy = {}
 
@@ -461,7 +465,7 @@ function makeLocalGetters (store, namespace) {
     // we do not want to evaluate the getters in this time.
     Object.defineProperty(gettersProxy, localType, {
       // 访问localType实际上映射到 store.getters 中的type
-        // 即访问 local.getter 最终会拼上命名空间从 store.getters 找
+        /**即访问 local.getter 最终会拼上命名空间从 store.getters 找**/
       get: () => store.getters[type],
       enumerable: true
     })
@@ -528,7 +532,8 @@ function registerGetter (store, type, rawGetter, local) {
   }
 }
 
-//通过watch这个state，来保证在开发环境下，对state的修改都是用过commit，不能直接修改state的属性
+// 通过 watch 整个 vm 实例的 state 对齐 setter 进行拦截
+// 来保证在开发环境下，对 state 的修改都是通过commit，不能直接修改 state 的属性
 function enableStrictMode (store) {
   store._vm.$watch(function () { return this._data.$$state }, () => {
     if (process.env.NODE_ENV !== 'production') {
