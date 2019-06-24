@@ -20,6 +20,7 @@ export default class ModuleCollection {
 
   // 当 namespaced 为 true 就将当前模块的属性名拼接到整个 namespace 组成的字符串中
   // 并且这个模块下面所有的 actions/mutations/getters 都会加上 namespace 前缀
+  // 否则不设置 namespaced 的模块会拼上字符串
   getNamespace (path) {
     let module = this.root
     return path.reduce((namespace, key) => {
@@ -33,7 +34,7 @@ export default class ModuleCollection {
   }
 
   // 根据配置项生成 ModuleCollection 实例，即所有模块集合
-  /**一般一个 Vuex 实例只有一个模块集合，一个模块集合有多个模块实例组成**/
+  // 一般一个 Vuex 实例只有一个模块集合，一个模块集合有多个模块实例组成
   // runtime 为 true 时，代表动态注入的模块，初始化时传入 false
   register (path, rawModule, runtime = true) {
     if (process.env.NODE_ENV !== 'production') {
@@ -46,6 +47,7 @@ export default class ModuleCollection {
       this.root = newModule
     } else {
         // 通过 path 参数，找到当前模块的父模块
+        // path.slice(0, -1) 为除去最后一个元素的 path 数组，即当前模块父模块的 path 数组
       const parent = this.get(path.slice(0, -1))
         // 给当前模块的父模块的 _children 属性添加当前模块
         // 即注册子模块
@@ -56,8 +58,7 @@ export default class ModuleCollection {
     // register nested modules
     if (rawModule.modules) {
       forEachValue(rawModule.modules, (rawChildModule, key) => {
-        // 将 path 参数并且当前模块子模块的属性名，传入递归 register 函数中
-        // 作为模块的前缀（命名空间）
+        /**将 path 数组合并上当前模块子模块的属性名，传入递归 register 函数中，作为模块的前缀（命名空间）**/
         this.register(path.concat(key), rawChildModule, runtime)
       })
     }

@@ -31,7 +31,7 @@ export class Store {
     this._actionSubscribers = []
     this._mutations = Object.create(null)
     this._wrappedGetters = Object.create(null)
-      //创建根modules，初始化父子modules关系（树）
+      // 创建根 modules，初始化父子 modules 关系（树）
     this._modules = new ModuleCollection(options)
     this._modulesNamespaceMap = Object.create(null)
     this._subscribers = []
@@ -55,7 +55,7 @@ export class Store {
     // init root module.
     // this also recursively registers all sub-modules
     // and collects all module getters inside this._wrappedGetters
-      //初始化当前模块和所有子模块，根据命名空间注册state,actions,mutations,getters，并且提供访问当前模块的便捷方法（local）
+    // 初始化当前模块和所有子模块，根据命名空间注册 state,actions,mutations,getters，并且提供访问当前模块的便捷方法（local）
     installModule(this, state, [], this._modules.root)
 
     // initialize the store vm, which is responsible for the reactivity
@@ -214,6 +214,7 @@ export class Store {
     resetStoreVM(this, this.state)
   }
 
+  // 动态卸载模块
   unregisterModule (path) {
     if (typeof path === 'string') path = [path]
 
@@ -221,11 +222,14 @@ export class Store {
       assert(Array.isArray(path), `module path must be a string or an Array.`)
     }
 
+    // 通过 path 从对应的模块中通过 delete 操作符删除属性
     this._modules.unregister(path)
     this._withCommit(() => {
       const parentState = getNestedState(this.state, path.slice(0, -1))
+        // 从 state 中删除该模块
       Vue.delete(parentState, path[path.length - 1])
     })
+      // 重置模块
     resetStore(this)
   }
 
@@ -256,11 +260,13 @@ function genericSubscribe (fn, subs) {
   }
 }
 
+// 重新初始化模块
 function resetStore (store, hot) {
   store._actions = Object.create(null)
   store._mutations = Object.create(null)
   store._wrappedGetters = Object.create(null)
   store._modulesNamespaceMap = Object.create(null)
+    // 保留了重置前的所有状态（包括模块）
   const state = store.state
   // init all modules
   installModule(store, state, [], store._modules.root, true)
@@ -280,6 +286,7 @@ function resetStoreVM (store, state, hot) {
     // use computed to leverage its lazy-caching mechanism
       // fn 是 wrappedGetters 对象的属性值，即 wrappedGetter 函数（497）
       /**将 wrappedGetters 对象上所有的 getter 函数，作为内部 vm 实例的 computed 属性**/
+      // 这里传入了全局的 store 对象，因为 getter 的 3，4 参数需要依赖 store 对象（store.state，store.getters）
     computed[key] = () => fn(store)
     // 定义 store.getters 属性，使得能直接通过 store.getters.< getter 名> 访问对应的 getter
     // key 为含有命名空间的完整路径
@@ -345,7 +352,9 @@ function installModule (store, rootState,path, module, hot) {
     const parentState = getNestedState(rootState, path.slice(0, -1))
     const moduleName = path[path.length - 1]
     store._withCommit(() => {
-      // 在父模块的 state 属性中添加当前模块，属性名是当前模块名，值是state对象
+      // 在父模块的 state 属性中添加当前模块，属性名是当前模块名，值是 state 对象
+        // Vuex 之所以这么做可能是因为需要让所有的模块状态都保存在 state 中
+        // 使得在重置模块时能够通过保留 state 从而保留所有的模块依赖关系
       Vue.set(parentState, moduleName, module.state)
     })
   }
@@ -356,9 +365,9 @@ function installModule (store, rootState,path, module, hot) {
   const local = module.context = makeLocalContext(store, namespace, path)
 
   module.forEachMutation((mutation, key) => {
-    //mutation是mutations中定义的函数，key为这个mutation函数的key
+    // mutation 是 mutations 中定义的函数，key 为这个 mutation 函数的 key
     const namespacedType = namespace + key
-      // 在 store 的 _mutations 中注册所有的mutations
+      // 给 store 的 _mutations 对象添加当前模块包含的所有 mutations
     registerMutation(store, namespacedType, mutation, local)
   })
 
@@ -386,6 +395,7 @@ function installModule (store, rootState,path, module, hot) {
  */
 // 使得声明了 namespace 的模块中的 actions dispatch 时不需要加上命名空间，自动作用与当前模块
 // 传入 namespace (a/b/c/)
+// 如果没有声明 namespaced，namespace 为一个空字符串
 function makeLocalContext (store, namespace, path) {
   const noNamespace = namespace === ''
 
@@ -398,7 +408,7 @@ function makeLocalContext (store, namespace, path) {
       let { type } = args
 
       if (!options || !options.root) {
-        // 如果定义了 namespace:true 则会自动在 type 前加上模块的命名空间（a/b/c/ + type）
+        /**如果定义了 namespace:true 则会自动在 type 前加上模块的命名空间（a/b/c/ + type）**/
         type = namespace + type
         if (process.env.NODE_ENV !== 'production' && !store._actions[type]) {
           console.error(`[vuex] unknown local action type: ${args.type}, global type: ${type}`)
