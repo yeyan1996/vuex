@@ -5,25 +5,29 @@
  * @param {Object}
  */
 export const mapState = normalizeNamespace((namespace, states) => {
+  // mapState 最终返回并放入到 computed 属性中的对象
   const res = {}
-    //将states转为key/value组成的数组，如果为数组则key/value相同
+    //将 mapState 的参数转为 key/value 组成的对象数组，如果为数组则 key/value 相同
   normalizeMap(states).forEach(({ key, val }) => {
+    // key 为映射到组件中的属性
+    // computed 计算属性的值是一个函数，对应 mappedState
     res[key] = function mappedState () {
+      /**依赖了 $store 属性，如果 $store 发生改变会重新触发计算**/
       let state = this.$store.state
       let getters = this.$store.getters
       if (namespace) {
-          //通过namespace从store._modulesNamespaceMap中找到这个namespace对应的模块
+          // 通过 namespace 从 store._modulesNamespaceMap 中找到这个 namespace 对应的模块
         const module = getModuleByNamespace(this.$store, 'mapState', namespace)
         if (!module) {
           return
         }
-        //将从当前模块的context中拿到作用域当前模块的state和getters并赋值给state,getters
+        // 将从当前模块的 context 中拿到作用域当前模块的 state 和 getters 并赋值给 state,getters
         state = module.context.state
         getters = module.context.getters
       }
       return typeof val === 'function'
-        ? val.call(this, state, getters)
-        : state[val]
+        ? val.call(this, state, getters) // 可以通过函数的返回值，方便的访问嵌套的子模块的 state
+        : state[val] // 如果不含有子模块，可以直接从根模块中获取 state 的值
     }
     // mark vuex getter for devtools
     res[key].vuex = true
@@ -38,6 +42,7 @@ export const mapState = normalizeNamespace((namespace, states) => {
  * @return {Object}
  */
 export const mapMutations = normalizeNamespace((namespace, mutations) => {
+  // 合并到组件 methods 属性中的对象， actions 同理
   const res = {}
   normalizeMap(mutations).forEach(({ key, val }) => {
     res[key] = function mappedMutation (...args) {
@@ -48,11 +53,12 @@ export const mapMutations = normalizeNamespace((namespace, mutations) => {
         if (!module) {
           return
         }
+        // 拿到作用于当前模块的 commit
         commit = module.context.commit
       }
       return typeof val === 'function'
         ? val.apply(this, [commit].concat(args))
-        : commit.apply(this.$store, [val].concat(args))
+        : commit.apply(this.$store, [val].concat(args)) // 直接执行 ctx.commit，并传入当前 mutation 名和参数
     }
   })
   return res
@@ -77,6 +83,7 @@ export const mapGetters = normalizeNamespace((namespace, getters) => {
         console.error(`[vuex] unknown getter: ${val}`)
         return
       }
+      // mapGetters 通过拼上命名前缀最终去 this.$store.getters 找
       return this.$store.getters[val]
     }
     // mark vuex getter for devtools
@@ -144,14 +151,14 @@ function normalizeMap (map) {
  * @return {Function}
  */
 function normalizeNamespace (fn) {
-  //namespace为mapState的第一个参数（对象（访问子模块）/数组（根模块）/字符串（命名空间））
-    // map为一个对象，当mapState使用命名空间时会传入第一个字符串参数和第二个map参数
+  // map 开头的辅助函数可以通过 namespace 参数指定命名空间
   return (namespace, map) => {
     if (typeof namespace !== 'string') {
-      //如果第一个参数不是字符串，即没有使用命名空间的写法，则将map等于第一个参数（对象/字符串），并且让namespace置空
+      // 如果第一个参数不是字符串，即没有使用命名空间的写法，则将 map 等于第一个参数（对象/字符串），并让 namespace 置空
+      // 最终执行 fn("",{.......需要映射的 Vuex 功能 })
       map = namespace
       namespace = ''
-    } else if (namespace.charAt(namespace.length - 1) !== '/') {
+    } else if (namespace.charAt(namespace.length - 1) !== '/') { // 最后一位不是 '/' 则补上 '/'
       namespace += '/'
     }
     return fn(namespace, map)

@@ -65,12 +65,13 @@ export class Store {
       **/
     resetStoreVM(this, state)
 
+    // 安装插件
     // apply plugins
     plugins.forEach(plugin => plugin(this))
 
     const useDevtools = options.devtools !== undefined ? options.devtools : Vue.config.devtools
     if (useDevtools) {
-      //vuex自动添加vue-devtools插件
+      // vuex 默认会添加 vue-devtools 插件
       devtoolPlugin(this)
     }
   }
@@ -104,7 +105,8 @@ export class Store {
     }
     this._withCommit(() => {
       entry.forEach(function commitIterator (handler) {
-        //hanlder同样也是一个wrappedMutation，包裹了一层函数，在内部会加入当前的local对象，再合并payload
+        // handler 同样包裹了一层函数 wrappedMutation ，在内部会加入当前的 local 对象，再合并 payload
+        // 执行这个 mutation
         handler(payload)
       })
     })
@@ -173,11 +175,11 @@ export class Store {
     })
   }
 
-  //添加一个订阅者,返回一个取消订阅的函数
+  // 添加一个 mutation 订阅者,返回一个取消订阅的函数
   subscribe (fn) {
     return genericSubscribe(fn, this._subscribers)
   }
-
+  // 添加一个 action 订阅者
   subscribeAction (fn) {
     const subs = typeof fn === 'function' ? { before: fn } : fn
     return genericSubscribe(subs, this._actionSubscribers)
@@ -190,6 +192,7 @@ export class Store {
     return this._watcherVM.$watch(() => getter(this.state, this.getters), cb, options)
   }
 
+  // 用于时间旅行
   replaceState (state) {
     this._withCommit(() => {
       this._vm._data.$$state = state
@@ -493,6 +496,7 @@ function registerMutation (store, type, handler, local) {
   })
 }
 
+// type 也是包含命名空间的完整路径
 function registerAction (store, type, handler, local) {
   const entry = store._actions[type] || (store._actions[type] = [])
     // action 会被 wrappedActionHandler 包裹一层，每当 dispatch 执行一个 action 时
